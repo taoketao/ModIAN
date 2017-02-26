@@ -76,39 +76,14 @@ def weight_variable(shape, myname, train):
 
 def model(inp, out, w):
   with tf.variable_scope("network", reuse=None):
-#    X_B = tf.add(tf.matmul(x, w['W_I_XB']), w['b_I_XB'])
-#    X_th = tf.add(tf.matmul(x, w['W_I_Xth']), w['b_I_Xth'])
 
-    print '------------'
-    print inp.get_shape(), w['W_I_Xth'].get_shape(), w['W_I_XB'].get_shape()
     inp_r = tf.reshape(inp, (inp_sz, 1))
     W_I_XB_r = tf.reshape(w['W_I_XB'], (N*B, inp_sz))
     W_I_Xth_r = tf.reshape(w['W_I_Xth'], (N*theta, inp_sz))
+    W_Y_X_new = tf.reshape(w['W_Y_X1'], (out_sz, N*phi))
     X_B  = tf.matmul(W_I_XB_r, inp_r )
-    X_th = tf.matmul(W_I_Xth_r, inp_r )
     X_B = tf.nn.softmax(X_B)
-
-
-    X_B = tf.reshape(X_B, (N, B))
-    X_th = tf.reshape(X_th, (N, theta))
-    # Todo: using mapfn, apply M to each of N: to X_th then to X_B.
-    # After the map, combine into Y and [FC] to X'.
-
-    def working_test_of__map_fn():
-        M_th_B = tf.reshape(w['M'], (B * phi, theta))
-        X_sl = tf.reshape(tf.slice(X_th, [0,0], [1,-1]), (theta,1))
-        print M_th_B.get_shape(), X_th.get_shape(), X_sl.get_shape()
-        Z = tf.matmul(M_th_B, X_sl)
-        Zr= tf.reshape(Z, (phi, B))
-        X_B = tf.reshape(X_B, (B,N))
-        print Zr.get_shape() ,'\n', X_B.get_shape()
-        def TEMP_module_operation_ordered_TH_B( input_xb):
-            Y = tf.matmul(Zr, X_B)
-            return Y
-
-        Y = tf.map_fn(TEMP_module_operation_ordered_TH_B, X_B)
-        print Y.get_shape() ## YES!
-        sys.exit()
+    X_th = tf.matmul(W_I_Xth_r, inp_r )
 
     D = 'float32'
     x_th = tf.reshape(X_th, (N, theta, 1))
@@ -125,12 +100,11 @@ def model(inp, out, w):
 
     Z = tf.map_fn(module_operation_TH, x_th, dtype=D)
     Zr = tf.reshape(Z, (N,  phi, B,))
-    print "T", tf.slice(Zr, [3,0,0],[1,-1,-1]).dtype
     Y = tf.map_fn(module_operation_B, tf.range(N), dtype=D) # map_fn: for parallelization
 
     Yr = tf.reshape(Y, (N*phi,1))
     FC_Y_Xnew = tf.reshape(w['W_Y_X1'], (out_sz, N*phi))
-    X_new = tf.nn.relu( tf.matmul(FC_Y_Xnew, Yr) )
+    X_new = tf.nn.relu( tf.matmul(W_Y_X_new, Yr) )
     return tf.reshape(X_new, (out_sz,))
 
 
@@ -146,13 +120,12 @@ with tf.Graph().as_default():
       'W_Y_X1' : weight_variable( (N, phi, out_sz), "Weights_Y_to_Xprime", True),
       'b_Y_X1' : weight_variable( (N, 1, out_sz), "biases_Y_to_Xprime", True),
     }
-    print '###############'
-    for k,v in Weights_0.items():
-        print k, ':', v.get_shape()
-    print '###############'
+#    print '###############'
+#    for k,v in Weights_0.items():
+#        print k, ':', v.get_shape()
+#    print '###############'
     y_var = tf.placeholder("float32", [out_sz])
     x_var = tf.placeholder("float32", [inp_sz])
-    print x_var.get_shape(), y_var.get_shape()
     this_model = model(x_var, y_var, Weights_0)
 
 
