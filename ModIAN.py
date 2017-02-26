@@ -71,7 +71,7 @@ test_I, test_I = simple_task(30)
 #   out_sz = 2
 
 def weight_variable(shape, myname, train):
-    initial = tf.random_uniform(shape, minval = -0.1, maxval = 0.1)
+    initial = tf.random_uniform(shape, minval = -0.1, maxval = 0.1, dtype='float32')
     return tf.Variable(initial, name=myname, trainable=train)
 
 def model(inp, out, w):
@@ -94,56 +94,44 @@ def model(inp, out, w):
     # Todo: using mapfn, apply M to each of N: to X_th then to X_B.
     # After the map, combine into Y and [FC] to X'.
 
-    M_th_B = tf.reshape(w['M'], (B * phi, theta))
-    X_sl = tf.reshape(tf.slice(X_th, [0,0], [1,-1]), (theta,1))
-    print M_th_B.get_shape(), X_th.get_shape(), X_sl.get_shape()
-    Z = tf.matmul(M_th_B, X_sl)
-    Zr= tf.reshape(Z, (phi, B))
-    X_B = tf.reshape(X_B, (B,N))
-    print Zr.get_shape() ,'\n', X_B.get_shape()
-    def TEMP_module_operation_ordered_TH_B( input_xb):
-        Y = tf.matmul(Zr, X_B)
-        return Y
-
-    Y = tf.map_fn(TEMP_module_operation_ordered_TH_B, X_B)
-    print Y.get_shape() ## YES!
-    sys.exit()
-
-    def module_operation_ordered_TH_B((input_xth, input_xb)):
+    def working_test_of__map_fn():
         M_th_B = tf.reshape(w['M'], (B * phi, theta))
-        Z = tf.matmul(M_th_B, X_th) # shape: (B*phi, N). -> (N*B, phi)
+        X_sl = tf.reshape(tf.slice(X_th, [0,0], [1,-1]), (theta,1))
+        print M_th_B.get_shape(), X_th.get_shape(), X_sl.get_shape()
+        Z = tf.matmul(M_th_B, X_sl)
         Zr= tf.reshape(Z, (phi, B))
-        Y = tf.matmul(Zr, X_B)
-        return Y
+        X_B = tf.reshape(X_B, (B,N))
+        print Zr.get_shape() ,'\n', X_B.get_shape()
+        def TEMP_module_operation_ordered_TH_B( input_xb):
+            Y = tf.matmul(Zr, X_B)
+            return Y
 
-    #print tf.map_fn(module_operation_ordered_TH_B, (X_th, X_B))
+        Y = tf.map_fn(TEMP_module_operation_ordered_TH_B, X_B)
+        print Y.get_shape() ## YES!
+        sys.exit()
 
-#    print '\t', X_th.get_shape(), M_th_B.get_shape()
-#    Z_r = tf.reshape(Z, (phi, N*B))
-#    print '\tZ,X_B shape:', Z_r.get_shape(), X_B.get_shape()
-#    Y = tf.reshape( tf.matmul(Z_r, X_B), (phi,) )
-#    print Y.get_shape()
-#    print w['W_Y_X1'].get_shape()
-#    X_new = tf.nn.relu(tf.matmul(Y,w['W_Y_X1']))
-#
-#    X_new = tf.nn.relu( tf.matmul(Y, w['W_Y_X1']) )
-#
-#    X_B = tf.reshape(X_B, (N*B, 1))
-#    X_th = tf.reshape(X_th, (N, theta))
-#    M = tf.reshape(w['M'], (1, B, theta, phi))
-#    M_th_B = tf.reshape(w['M'], (B * phi, theta))
-#    print '\t', X_th.get_shape(), M_th_B.get_shape()
-#    Z = tf.matmul(M_th_B, X_th) # shape: (B*phi, N). -> (N*B, phi)
-#    # *** this destroys N as well.
-#    Z_r = tf.reshape(Z, (phi, N*B))
-#    print '\tZ,X_B shape:', Z_r.get_shape(), X_B.get_shape()
-#    Y = tf.reshape( tf.matmul(Z_r, X_B), (phi,) )
-#    print Y.get_shape()
-#    print w['W_Y_X1'].get_shape()
-#    X_new = tf.nn.relu(tf.matmul(Y,w['W_Y_X1']))
-#
-#    X_new = tf.nn.relu( tf.matmul(Y, w['W_Y_X1']) )
-    return X_new
+    D = 'float32'
+    x_th = tf.reshape(X_th, (N, theta, 1))
+    x_b = tf.reshape(X_B, (N, B, 1))
+
+    M_th_B = tf.reshape(w['M'], (B * phi, theta))
+    def module_operation_TH(x_th):
+        Z = tf.matmul(M_th_B, x_th) # shape: (B*phi, N). -> (N*B, phi)
+        return Z
+    def module_operation_B(i):
+        Z_slice = tf.reshape(tf.slice(Zr, [i,0,0],[1,-1,-1]), (phi,B))
+        xb_slice = tf.reshape(tf.slice(x_b, [i,0,0],[1,-1,-1]), (B,1))
+        return tf.matmul(Z_slice, xb_slice)
+
+    Z = tf.map_fn(module_operation_TH, x_th, dtype=D)
+    Zr = tf.reshape(Z, (N,  phi, B,))
+    print "T", tf.slice(Zr, [3,0,0],[1,-1,-1]).dtype
+    Y = tf.map_fn(module_operation_B, tf.range(N), dtype=D) # map_fn: for parallelization
+
+    Yr = tf.reshape(Y, (N*phi,1))
+    FC_Y_Xnew = tf.reshape(w['W_Y_X1'], (out_sz, N*phi))
+    X_new = tf.nn.relu( tf.matmul(FC_Y_Xnew, Yr) )
+    return tf.reshape(X_new, (out_sz,))
 
 
 with tf.Graph().as_default():
@@ -162,12 +150,8 @@ with tf.Graph().as_default():
     for k,v in Weights_0.items():
         print k, ':', v.get_shape()
     print '###############'
-#    x_var = [tf.placeholder("float", [inp_sz]) for _ in range(N)]
-#    x_var = tf.concat(0,tf.reshape(x_var,(inp_sz,1)))
-#    y_var = [tf.placeholder("float", [out_sz]) for _ in range(N)]
-#    y_var = tf.concat(0,tf.reshape(y_var,(1,out_sz)))
-    y_var = tf.placeholder("float", [out_sz])
-    x_var = tf.placeholder("float", [inp_sz])
+    y_var = tf.placeholder("float32", [out_sz])
+    x_var = tf.placeholder("float32", [inp_sz])
     print x_var.get_shape(), y_var.get_shape()
     this_model = model(x_var, y_var, Weights_0)
 
