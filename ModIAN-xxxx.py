@@ -22,25 +22,18 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-import time, random, sys, os, argparse, time
+import time, random, sys, os, argparse
 from datetime import datetime
 startTime = datetime.now()
 
 dataset = tf_mnist_loader.read_data_sets("mnist_data", one_hot=True)
 
-inp_sz = 8;     lr = 0.00005 ## super small learning rate bc multiplicative effects
-N = 8;          epochs = 40000
+inp_sz = 5;     lr = 0.001
+N = 10;         epochs = 50
 theta = 8;      batchsize = 16
 B = 4;          disp_step = 10
-phi = 8;        momentum = 0.9
-out_sz = 4
-
-#inp_sz = 5;     lr = 0.0001 ## super small learning rate bc multiplicative effects
-#N = 10;         epochs = 50
-#theta = 8;      batchsize = 16
-#B = 4;          disp_step = 10
-#phi = 16;       momentum = 0.9
-#out_sz = 2
+phi = 16;       momentum = 0.9
+out_sz = 2
 
 #inp_sz = 784;       lr = 0.001
 #N = 32;             epochs = 50
@@ -52,48 +45,12 @@ out_sz = 4
 # DATA
 #train_I, train_O = simple_task(200)
 #test_I, test_O = simple_task(30)
-
-def softmax_stable(v):
-    return np.exp(v) / (1.0+np.exp(v))
-
-def simple_task():
-    if not (inp_sz==8 and out_sz==4): 
-        print "Bad dims"
-        sys.exit()
-    a = float(np.random.randint(2))
-    b = float(np.random.randint(2))
-    c = float(np.random.randint(2))
-    d = float(np.random.randint(2))
-    e = float(np.random.randint(2))
-    f = float(np.random.randint(2))
-    g = float(np.random.randint(2))
-    h = float(np.random.randint(2))
-    return np.array([a,b,c,d,e,f,g,h], ndmin=2), np.array([\
-            1.0 if (a==1 and b==1) else 0.0,\
-            1.0 if (h==c and not d==e and f==0) else 0.0,\
-            1.0 if (not a==c and not g==e and f==0) else 0.0,\
-            1.0 if (a==f and not (a==1 or b==0)) else 0.0\
-        ], ndmin=2)
-
-
-def medium_task(n=100, I=inp_sz, O=out_sz):
-    lx=[]; ly=[]
-    for i in range(n):
-        x_tmp = tuple([np.random.randint(-5,20) for _ in range(I)])
-        lx.append(np.array(x_tmp, dtype='float32'))
-        y_tmp = [softmax_stable(x_tmp[0] + x_tmp[1]), \
-                 softmax_stable(2*x_tmp[1]-np.sum(x_tmp[2:])) ]
-        while len(y_tmp)<O:
-            y_tmp = y_tmp+[0]
-        ly.append(np.array(y_tmp, dtype='float32'))
-    return np.array(lx), np.array(ly)
-
 def gate_variable(shape, myname, train):
     initial = tf.zeros(shape, dtype='float32')
     return tf.Variable(initial, name=myname, trainable=train)
 
 def weight_variable(shape, myname, train):
-    initial = tf.random_uniform(shape, minval = -0.3, maxval = 0.3, dtype='float32')
+    initial = tf.random_uniform(shape, minval = -0.1, maxval = 0.1, dtype='float32')
     return tf.Variable(initial, name=myname, trainable=train)
 
 def model(inp, w):
@@ -141,8 +98,7 @@ Weights_0 = {
   #'b_I_Xth': weight_variable((1, N, theta), "biases_Inp_to_Xtheta", True),
   'W_I_XB' : gate_variable((inp_sz, N, B), "Weights_Inp_to_XB", True),
   #'b_I_XB' : weight_variable((1, N, B), "biases_Inp_to_XB", True),
-  #'M'      : weight_variable( (B, theta, phi), "Module", True), # trainable
-  'M'      : weight_variable( (B, theta, phi), "Module", False), # NOT trainable
+  'M'      : weight_variable( (B, theta, phi), "Module", True), # trainable
   'W_Y_X1' : weight_variable( (N, phi, out_sz), "Weights_Y_to_Xprime", True),
   #'b_Y_X1' : weight_variable( (N, 1, out_sz), "biases_Y_to_Xprime", True),
 }
@@ -165,60 +121,28 @@ init = tf.initialize_all_variables()
 
 with tf.Session() as sess:
     sess.run(init)
-    accs = []
     for epoch in range(epochs):
-        avg_cost = 0.0
-        avg_grad = None
+        #avg_cost = 0.0
         for i in range(batchsize):
             R = np.random.randint(200)
             #x, y = train_I[R,:], np.expand_dims(train_O[R,:], 1)
-            #x,y = dataset.train.next_batch(1)
-            x,y = simple_task()
+            x,y = dataset.train.next_batch(1)
             x = np.expand_dims(x[0,:],0)
 
             ValsOfInterest = [optimizer, cost, grad_var]#+Weights_0.values()
             #for v in ValsOfInterest: print '\t',v
-            _,c,g = sess.run(ValsOfInterest, feed_dict={x_var: x, y_var: y})
-            avg_cost += c
-            try: 
-                avg_grad = avg_grad + g
-            except:
-                avg_grad = g
+            c = sess.run(ValsOfInterest, feed_dict={x_var: x, y_var: y})
+
 #            c = sess.run([optimizer, cost], feed_dict={x_var: x, y_var: y})
-        print "Epoch", epoch, #"\tCost", avg_cost/batchsize\
-                #, "\tAvg squared gradient", np.mean(avg_grad)**2,
-
-
-        val_corr_pred = tf.equal(tf.argmax(this_model, 1), tf.argmax(y,1))
-        #val_corr_pred = tf.equal(this_model, y)
-        val_accuracy = tf.reduce_mean(tf.cast(val_corr_pred, "float"))
-        val_accuracy = 1.0-(this_model-y)**2
-        xv,yv = simple_task()
-        val_cost = val_accuracy.eval({x_var: xv, y_var: yv})
-#        print "\tVal acc", val_cost
-        print ' --\t', [int(np.round(i)) for i in sess.run(   [this_model], \
-                {x_var:xv, y_var:yv})[0][0]], [int(i) for i in y[0]]
-        print '\t\t', [int(i) for i in xv.tolist()[0]]
-#        accs.append(val_cost)
-        accs.append(this_model.eval({x_var: xv, y_var: yv}))
-
+        print "Epoch", epoch, "Cost", c
+        if epoch % disp_step==0:
+            pass #print "Epoch", epoch, "Cost", c, 
     print "Opt finished."
 
-    A = np.array(accs)
-    print A.shape
-    for a in range(A.shape[1]):
-        plt.plot(A[:,a])
-    plt.ylabel("Error")
-    plt.xlabel("Epoch")
-    plt.savefig(time.ctime())
-
-#    corr_pred = tf.equal(tf.argmax(this_model, 1), tf.argmax(y,1))
-#    accuracy = tf.reduce_mean(tf.cast(corr_pred, "float"))
-#    x,y = np.squeeze(dataset.test.next_batch(1))
-#    x_,y_=np.mean([simple_task() for _ in range(30)])
-#    print "Accuracy simple:", np.mean( [accuracy.eval({x_var: x_, y_var: y_})
-#                for r in range(30)])
-#    print "Accuracy:", np.mean( [accuracy.eval({x_var: x, y_var: y})
-#                for r in range(30)])
+    corr_pred = tf.equal(tf.argmax(this_model, 1), tf.argmax(y,1))
+    accuracy = tf.reduce_mean(tf.cast(corr_pred, "float"))
+    x,y = np.squeeze(dataset.test.next_batch(1))
+    print "Accuracy:", np.mean( [accuracy.eval({x_var: x, y_var: y})
+                for r in range(30)])
 
 print "Done."
