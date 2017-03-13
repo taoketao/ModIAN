@@ -17,7 +17,7 @@ significant transferrence of aggregated skill.
 
 #########################   IMPORTS & VERSIONS & SETUP #########################
 import tensorflow as tf
-#import tf_mnist_loader
+import tf_mnist_loader
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -26,10 +26,10 @@ import time, random, sys, os, argparse, time
 from datetime import datetime
 startTime = datetime.now()
 
-#dataset = tf_mnist_loader.read_data_sets("mnist_data", one_hot=True)
+dataset = tf_mnist_loader.read_data_sets("mnist_data", one_hot=True)
 
-inp_sz = 8;     lr = 0.00001 ## super small learning rate bc multiplicative effects
-N = 8;          epochs = 100
+inp_sz = 8;     lr = 0.00005 ## super small learning rate bc multiplicative effects
+N = 8;          epochs = 40000
 theta = 8;      batchsize = 16
 B = 4;          disp_step = 10
 phi = 8;        momentum = 0.9
@@ -136,52 +136,47 @@ def model(inp, w):
 #   phi = 16        momentum = 0.9
 #   out_sz = 2
 
-G = tf.Graph()
-with G.as_default():
-  Weights_0 = {
-    'W_I_Xth': weight_variable((inp_sz, N, theta), "Weights_Inp_to_Xtheta",True),
-    #'b_I_Xth': weight_variable((1, N, theta), "biases_Inp_to_Xtheta", True),
-    'W_I_XB' : gate_variable((inp_sz, N, B), "Weights_Inp_to_XB", True),
-    #'b_I_XB' : weight_variable((1, N, B), "biases_Inp_to_XB", True),
-    #'M'      : weight_variable( (B, theta, phi), "Module", True), # trainable
-    'M'      : weight_variable( (B, theta, phi), "Module", False), # NOT trainable
-    'W_Y_X1' : weight_variable( (N, phi, out_sz), "Weights_Y_to_Xprime", True),
-    #'b_Y_X1' : weight_variable( (N, 1, out_sz), "biases_Y_to_Xprime", True),
-  }
-  
-  x_var = tf.placeholder("float32", [1,inp_sz])
-  y_var = tf.placeholder("float32", [1,out_sz])
-  this_model = model(x_var, Weights_0)
-  
-  cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits\
-          (logits = this_model, labels = tf.to_float(y_var)))
-  optimizer = tf.train.GradientDescentOptimizer(learning_rate = lr)
-  grads = optimizer.compute_gradients(y_var)
-  grad_var = tf.gradients(cost, Weights_0.values())[0]
-  optimizer = optimizer.minimize(cost)
-  ValsOfInterest = [optimizer, cost, grad_var]#+Weights_0.values()
-  
-  print "SHAPE:",this_model.get_shape(), y_var.get_shape()
-  init = tf.initialize_all_variables()
-  G.finalize()
-  
-  TRAINSET = [simple_task() for _ in range(600)]
-  VALSET = [simple_task() for _ in range(100)]
-  accs = []
-  
-  with tf.Session() as sess:
+Weights_0 = {
+  'W_I_Xth': weight_variable((inp_sz, N, theta), "Weights_Inp_to_Xtheta",True),
+  #'b_I_Xth': weight_variable((1, N, theta), "biases_Inp_to_Xtheta", True),
+  'W_I_XB' : gate_variable((inp_sz, N, B), "Weights_Inp_to_XB", True),
+  #'b_I_XB' : weight_variable((1, N, B), "biases_Inp_to_XB", True),
+  #'M'      : weight_variable( (B, theta, phi), "Module", True), # trainable
+  'M'      : weight_variable( (B, theta, phi), "Module", False), # NOT trainable
+  'W_Y_X1' : weight_variable( (N, phi, out_sz), "Weights_Y_to_Xprime", True),
+  #'b_Y_X1' : weight_variable( (N, 1, out_sz), "biases_Y_to_Xprime", True),
+}
+
+x_var = tf.placeholder("float32", [1,inp_sz])
+y_var = tf.placeholder("float32", [1,out_sz])
+this_model = model(x_var, Weights_0)
+print "SHAPE:",this_model.get_shape(), y_var.get_shape()
+
+cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits\
+        (logits = this_model, labels = tf.to_float(y_var)))
+#optimizer = tf.train.MomentumOptimizer(learning_rate = lr, \
+#        momentum = momentum, ).minimize(cost)
+optimizer = tf.train.GradientDescentOptimizer(learning_rate = lr)
+grads = optimizer.compute_gradients(y_var)
+grad_var = tf.gradients(cost, Weights_0.values())[0]
+optimizer = optimizer.minimize(cost)
+
+init = tf.initialize_all_variables()
+
+with tf.Session() as sess:
     sess.run(init)
-    curtime = time.time()
+    accs = []
     for epoch in range(epochs):
         avg_cost = 0.0
         avg_grad = None
         for i in range(batchsize):
-            R = np.random.randint(600)
+            R = np.random.randint(200)
             #x, y = train_I[R,:], np.expand_dims(train_O[R,:], 1)
             #x,y = dataset.train.next_batch(1)
-            #x,y = simple_task()
-            x,y=TRAINSET[R]
+            x,y = simple_task()
             x = np.expand_dims(x[0,:],0)
+
+            ValsOfInterest = [optimizer, cost, grad_var]#+Weights_0.values()
             #for v in ValsOfInterest: print '\t',v
             _,c,g = sess.run(ValsOfInterest, feed_dict={x_var: x, y_var: y})
             avg_cost += c
@@ -192,45 +187,30 @@ with G.as_default():
 #            c = sess.run([optimizer, cost], feed_dict={x_var: x, y_var: y})
         print "Epoch", epoch, #"\tCost", avg_cost/batchsize\
                 #, "\tAvg squared gradient", np.mean(avg_grad)**2,
-        print '\ttime:', time.time()-curtime, 
-        curtime=time.time()
 
-        #val_corr_pred = tf.equal(tf.argmax(this_model, 1), tf.argmax(y,1))
+
+        val_corr_pred = tf.equal(tf.argmax(this_model, 1), tf.argmax(y,1))
         #val_corr_pred = tf.equal(this_model, y)
-        #val_accuracy = tf.reduce_mean(tf.cast(val_corr_pred, "float"))
-        #xv,yv = simple_task()
-        xv,yv = VALSET[np.random.randint(100)]
-        #val_cost = val_accuracy.eval({x_var: xv, y_var: yv})
-#            print "\tVal acc", val_cost
-#        X = [int(np.round(i)) for i in sess.run(   [this_model], \
-#                {x_var:xv, y_var:yv})[0][0]]
-#        print 'xxx',X, [int(i) for i in y[0]]
-#            print ' --\t', [int(np.round(i)) for i in sess.run(   [this_model], \
-#                    {x_var:xv, y_var:yv})[0][0]], [int(i) for i in y[0]]
-#        print '\t\t', [int(i) for i in xv.tolist()[0]]
-        #accs.append(X)
-        #accs.append(val_cost)
+        val_accuracy = tf.reduce_mean(tf.cast(val_corr_pred, "float"))
+        val_accuracy = 1.0-(this_model-y)**2
+        xv,yv = simple_task()
+        val_cost = val_accuracy.eval({x_var: xv, y_var: yv})
+#        print "\tVal acc", val_cost
+        print ' --\t', [int(np.round(i)) for i in sess.run(   [this_model], \
+                {x_var:xv, y_var:yv})[0][0]], [int(i) for i in y[0]]
+        print '\t\t', [int(i) for i in xv.tolist()[0]]
+#        accs.append(val_cost)
         accs.append(this_model.eval({x_var: xv, y_var: yv}))
-        print '\tAcc:', accs[-1]
-        #tf.reset_default_graph()
 
-print "Opt finished."
+    print "Opt finished."
 
-A = np.array(accs)
-print A.shape
-print_epoch=20
-for a in range(A.shape[2]):
-  s = 'Logic task #'+str(a)
-  print s
-  A_ = [np.mean(A[print_epoch*index:(print_epoch*(1+index)-1),0,a], axis=0) 
-          for index in range(A.shape[0]/print_epoch)]
-  plt.plot(A_, label=s)
-  #print (A[:,a*print_epoch:((a+1)*print_ep-1)]).shape, A_.shape
-plt.ylabel("Error")
-plt.xlabel("Epoch x "+str(print_epoch))
-plt.legend()
-plt.savefig(time.ctime())
-plt.close()
+    A = np.array(accs)
+    print A.shape
+    for a in range(A.shape[1]):
+        plt.plot(A[:,a])
+    plt.ylabel("Error")
+    plt.xlabel("Epoch")
+    plt.savefig(time.ctime())
 
 #    corr_pred = tf.equal(tf.argmax(this_model, 1), tf.argmax(y,1))
 #    accuracy = tf.reduce_mean(tf.cast(corr_pred, "float"))
