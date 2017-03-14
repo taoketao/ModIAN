@@ -29,11 +29,14 @@ startTime = datetime.now()
 #dataset = tf_mnist_loader.read_data_sets("mnist_data", one_hot=True)
 
 inp_sz = 8;     lr = 0.00001 ## super small learning rate bc multiplicative effects
-N = 8;          epochs = 100
+N = 8;          epochs = 3
 theta = 8;      batchsize = 16
 B = 4;          disp_step = 10
 phi = 8;        momentum = 0.9
 out_sz = 4
+
+print "Parameters inp_sz,N,theta,B,phi,out_sz,lr,epochs,batchsize:"
+print inp_sz,N,theta,B,phi,out_sz,lr,epochs,batchsize
 
 #inp_sz = 5;     lr = 0.0001 ## super small learning rate bc multiplicative effects
 #N = 10;         epochs = 50
@@ -75,6 +78,40 @@ def simple_task():
             1.0 if (a==f and not (a==1 or b==0)) else 0.0\
         ], ndmin=2)
 
+def simple_task2():
+    if not (inp_sz==8 and out_sz==4): 
+        print "Bad dims"
+        sys.exit()
+    a = float(np.random.randint(2))
+    b = float(np.random.randint(2))
+    c = float(np.random.randint(2))
+    d = float(np.random.randint(2))
+    e = float(np.random.randint(2))
+    f = float(np.random.randint(2))
+    g = float(np.random.randint(2))
+    h = float(np.random.randint(2))
+    return np.array([a,b,c,d,e,f,g,h], ndmin=2), np.array([\
+            1.0 if (a and b) else 0.0,\
+            1.0 if (g or d) else 0.0,\
+            1.0 if (c or e or f or h) else 0.0,\
+            1.0 if (c==d and e==f) else 0.0,\
+            1.0 if (c==d or e==f) else 0.0,\
+            1.0 if not (g==h) else 0.0,\
+            1.0 if g==(h or a) else 0.0,\
+            1.0 if (a==b and a==c) else 0.0,\
+            1.0 if (d or not e) else 0.0,\
+            1.0 if (a or b) == (c and d) else 0.0, \
+            1.0 if (not (a or b)) == (c and d) else 0.0, \
+            1.0 if (a and b==a) or (c and b==c) else 0.0, \
+            1.0 if g==h else 0.0,\
+            1.0 if not f==h else 0.0, \
+        ], ndmin=2)
+
+
+# see https://en.wikipedia.org/wiki/Linearity:
+# linear boolean functions
+
+
 
 def medium_task(n=100, I=inp_sz, O=out_sz):
     lx=[]; ly=[]
@@ -93,7 +130,25 @@ def gate_variable(shape, myname, train):
     return tf.Variable(initial, name=myname, trainable=train)
 
 def weight_variable(shape, myname, train):
-    initial = tf.random_uniform(shape, minval = -0.3, maxval = 0.3, dtype='float32')
+    #initial = tf.random_uniform(shape, minval = -0.3, maxval = 0.3, dtype='float32')
+    #initial = tf.random_uniform(shape, minval = 0.0, maxval = 0.3, dtype='float32')
+    #initial = tf.random_uniform(shape, minval = -0.02, maxval = 0.1, dtype='float32')
+    nvars = 1
+    for s in shape:
+        nvars = nvars * s
+    #initial = tf.random_uniform(shape, minval = -0.05, maxval = 0.15, dtype='float32')
+    initial = tf.random_uniform(shape, minval = -25.0/nvars, maxval = 75.0/nvars, dtype='float32')
+    print "weight var",myname,"initialized uni(-1,4 times nvars =", nvars,")"
+    return tf.Variable(initial, name=myname, trainable=train)
+#print "weight variables initialized uni(-0.05,0.15)"
+
+def xavier_variable(shape, myname, train):
+    nvars = 1
+    for s in shape:
+        nvars = nvars * s
+    xav = (12.0/nvars)**0.5
+    initial = tf.random_uniform(shape, minval = -xav*0.25, maxval = xav*0.75, dtype='float32')
+    print "weight var",myname,"initialized by quasi-xavier: uni(",-xav*0.25,xav*0.75,')'
     return tf.Variable(initial, name=myname, trainable=train)
 
 def model(inp, w):
@@ -103,8 +158,7 @@ def model(inp, w):
     W_I_XB_r = tf.reshape(w['W_I_XB'], (N*B, inp_sz))
     W_I_Xth_r = tf.reshape(w['W_I_Xth'], (N*theta, inp_sz))
     W_Y_X_new = tf.reshape(w['W_Y_X1'], (out_sz, N*phi))
-    X_B  = tf.matmul(W_I_XB_r, inp_r )
-    X_B = tf.nn.softmax(X_B)
+    X_B  = tf.nn.softmax(tf.matmul(W_I_XB_r, inp_r ))
     X_th = tf.matmul(W_I_Xth_r, inp_r )
 
     D = 'float32'
@@ -148,6 +202,7 @@ with G.as_default():
     'W_Y_X1' : weight_variable( (N, phi, out_sz), "Weights_Y_to_Xprime", True),
     #'b_Y_X1' : weight_variable( (N, 1, out_sz), "biases_Y_to_Xprime", True),
   }
+  print "Is module M trainable? NO"
   
   x_var = tf.placeholder("float32", [1,inp_sz])
   y_var = tf.placeholder("float32", [1,out_sz])
@@ -172,6 +227,7 @@ with G.as_default():
   with tf.Session() as sess:
     sess.run(init)
     curtime = time.time()
+    avg_time = 0.0
     for epoch in range(epochs):
         avg_cost = 0.0
         avg_grad = None
@@ -190,10 +246,13 @@ with G.as_default():
             except:
                 avg_grad = g
 #            c = sess.run([optimizer, cost], feed_dict={x_var: x, y_var: y})
-        print "Epoch", epoch, #"\tCost", avg_cost/batchsize\
+        if not epoch%5: print "Epoch", epoch, #"\tCost", avg_cost/batchsize\
                 #, "\tAvg squared gradient", np.mean(avg_grad)**2,
-        print '\ttime:', time.time()-curtime, 
-        curtime=time.time()
+        t = time.time()
+        if not epoch%5: print '\ttime:', '%.3f'%( t-curtime ),
+        avg_time += (t-curtime)
+        if not epoch%5: print ' avg:',  '%.3f'%( avg_time/(1+epoch) ),'s',
+        curtime=t
 
         #val_corr_pred = tf.equal(tf.argmax(this_model, 1), tf.argmax(y,1))
         #val_corr_pred = tf.equal(this_model, y)
@@ -211,7 +270,7 @@ with G.as_default():
         #accs.append(X)
         #accs.append(val_cost)
         accs.append(this_model.eval({x_var: xv, y_var: yv}))
-        print '\tAcc:', accs[-1]
+        if not epoch%5: print '\tErr:', accs[-1]
         #tf.reset_default_graph()
 
 print "Opt finished."
