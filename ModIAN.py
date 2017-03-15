@@ -28,12 +28,12 @@ startTime = datetime.now()
 
 #dataset = tf_mnist_loader.read_data_sets("mnist_data", one_hot=True)
 
-inp_sz = 8;     lr = 0.00001 ## super small learning rate bc multiplicative effects
-N = 8;          epochs = 3
+inp_sz = 8;     lr = 0.00003 ## super small learning rate bc multiplicative effects
+N = 8;          epochs = 3000
 theta = 8;      batchsize = 16
 B = 4;          disp_step = 10
 phi = 8;        momentum = 0.9
-out_sz = 4
+out_sz = 14
 
 print "Parameters inp_sz,N,theta,B,phi,out_sz,lr,epochs,batchsize:"
 print inp_sz,N,theta,B,phi,out_sz,lr,epochs,batchsize
@@ -79,7 +79,7 @@ def simple_task():
         ], ndmin=2)
 
 def simple_task2():
-    if not (inp_sz==8 and out_sz==4): 
+    if not (inp_sz==8 and out_sz==14): 
         print "Bad dims"
         sys.exit()
     a = float(np.random.randint(2))
@@ -125,30 +125,30 @@ def medium_task(n=100, I=inp_sz, O=out_sz):
         ly.append(np.array(y_tmp, dtype='float32'))
     return np.array(lx), np.array(ly)
 
-def gate_variable(shape, myname, train):
+def gate_variable(shape, myname, train):  # want 
     initial = tf.zeros(shape, dtype='float32')
     return tf.Variable(initial, name=myname, trainable=train)
 
 def weight_variable(shape, myname, train):
-    #initial = tf.random_uniform(shape, minval = -0.3, maxval = 0.3, dtype='float32')
-    #initial = tf.random_uniform(shape, minval = 0.0, maxval = 0.3, dtype='float32')
-    #initial = tf.random_uniform(shape, minval = -0.02, maxval = 0.1, dtype='float32')
     nvars = 1
     for s in shape:
         nvars = nvars * s
-    #initial = tf.random_uniform(shape, minval = -0.05, maxval = 0.15, dtype='float32')
-    initial = tf.random_uniform(shape, minval = -25.0/nvars, maxval = 75.0/nvars, dtype='float32')
-    print "weight var",myname,"initialized uni(-1,4 times nvars =", nvars,")"
+    MIN = -3.2/nvars
+    MAX = 9.6/nvars
+    initial = tf.random_uniform(shape, minval = MIN, maxval = MAX, dtype='float32')
+    print "weight var",myname,"initialized uni:", '%.3f'%(MIN), '%.3f'%(MAX)
     return tf.Variable(initial, name=myname, trainable=train)
-#print "weight variables initialized uni(-0.05,0.15)"
 
 def xavier_variable(shape, myname, train):
     nvars = 1
     for s in shape:
         nvars = nvars * s
     xav = (12.0/nvars)**0.5
-    initial = tf.random_uniform(shape, minval = -xav*0.25, maxval = xav*0.75, dtype='float32')
-    print "weight var",myname,"initialized by quasi-xavier: uni(",-xav*0.25,xav*0.75,')'
+    MIN = 0
+    MAX = xav
+    initial = tf.random_uniform(shape, minval = MIN, maxval = MAX, dtype='float32')
+    print "weight var",myname,"initialized by quasi-2x-xavier: uni(",\
+            '%.3f'%(MIN),'%.3f'%(MAX),'), xavier=','%.3f'%(xav)
     return tf.Variable(initial, name=myname, trainable=train)
 
 def model(inp, w):
@@ -193,13 +193,13 @@ def model(inp, w):
 G = tf.Graph()
 with G.as_default():
   Weights_0 = {
-    'W_I_Xth': weight_variable((inp_sz, N, theta), "Weights_Inp_to_Xtheta",True),
+    'W_I_Xth': xavier_variable((inp_sz, N, theta), "Weights_Inp_to_Xtheta",True),
     #'b_I_Xth': weight_variable((1, N, theta), "biases_Inp_to_Xtheta", True),
     'W_I_XB' : gate_variable((inp_sz, N, B), "Weights_Inp_to_XB", True),
     #'b_I_XB' : weight_variable((1, N, B), "biases_Inp_to_XB", True),
     #'M'      : weight_variable( (B, theta, phi), "Module", True), # trainable
-    'M'      : weight_variable( (B, theta, phi), "Module", False), # NOT trainable
-    'W_Y_X1' : weight_variable( (N, phi, out_sz), "Weights_Y_to_Xprime", True),
+    'M'      : xavier_variable( (B, theta, phi), "Module", False), # NOT trainable
+    'W_Y_X1' : xavier_variable( (N, phi, out_sz), "Weights_Y_to_Xprime", True),
     #'b_Y_X1' : weight_variable( (N, 1, out_sz), "biases_Y_to_Xprime", True),
   }
   print "Is module M trainable? NO"
@@ -220,8 +220,9 @@ with G.as_default():
   init = tf.initialize_all_variables()
   G.finalize()
   
-  TRAINSET = [simple_task() for _ in range(600)]
-  VALSET = [simple_task() for _ in range(100)]
+  TRAINSET = [simple_task2() for _ in range(600)]
+  VALSET = [simple_task2() for _ in range(100)]
+  print "Task: simple_task2."
   accs = []
   
   with tf.Session() as sess:
@@ -246,12 +247,12 @@ with G.as_default():
             except:
                 avg_grad = g
 #            c = sess.run([optimizer, cost], feed_dict={x_var: x, y_var: y})
-        if not epoch%5: print "Epoch", epoch, #"\tCost", avg_cost/batchsize\
+        if not epoch%10: print "Epoch", epoch, #"\tCost", avg_cost/batchsize\
                 #, "\tAvg squared gradient", np.mean(avg_grad)**2,
         t = time.time()
-        if not epoch%5: print '\ttime:', '%.3f'%( t-curtime ),
+        if not epoch%10: print '\ttime:', '%.3f'%( t-curtime ),
         avg_time += (t-curtime)
-        if not epoch%5: print ' avg:',  '%.3f'%( avg_time/(1+epoch) ),'s',
+        if not epoch%10: print ' avg:',  '%.3f'%( avg_time/(1+epoch) ),'s',
         curtime=t
 
         #val_corr_pred = tf.equal(tf.argmax(this_model, 1), tf.argmax(y,1))
@@ -270,7 +271,8 @@ with G.as_default():
         #accs.append(X)
         #accs.append(val_cost)
         accs.append(this_model.eval({x_var: xv, y_var: yv}))
-        if not epoch%5: print '\tErr:', accs[-1]
+        #if not epoch%10: print '\n\tErr:', ['%.5f'%a for a in accs[-1][0]]
+        if not epoch%10: print '\n\tErr:', [a for a in accs[-1][0]]
         #tf.reset_default_graph()
 
 print "Opt finished."
@@ -278,6 +280,7 @@ print "Opt finished."
 A = np.array(accs)
 print A.shape
 print_epoch=20
+plt.subplot(111).set_yscale("log")
 for a in range(A.shape[2]):
   s = 'Logic task #'+str(a)
   print s
@@ -285,6 +288,7 @@ for a in range(A.shape[2]):
           for index in range(A.shape[0]/print_epoch)]
   plt.plot(A_, label=s)
   #print (A[:,a*print_epoch:((a+1)*print_ep-1)]).shape, A_.shape
+plt.title("Trial begun at "+str(startTime))
 plt.ylabel("Error")
 plt.xlabel("Epoch x "+str(print_epoch))
 plt.legend()
